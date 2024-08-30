@@ -48,19 +48,19 @@ def check_course_status(driver):
     # 點擊護理系按鈕
     try:
         nursing_button = WebDriverWait(driver, 20).until(
-            EC.element_to_be_clickable((By.XPATH, "//li[@class='btn_dept' and @data-dept='I2']"))
+            EC.element_to_be_clickable((By.XPATH, "//li[@class='btn_dept' and @data-dept='B3']"))
         )
         driver.execute_script("arguments[0].click();", nursing_button)  # 使用JavaScript點擊
-        print("護理系按鈕點擊成功")
+        print("科系按鈕點擊成功")
 
         # 等待新頁面加載完成
         WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.XPATH, "//td[contains(text(), 'Nursing NURS')]"))
+            EC.presence_of_element_located((By.XPATH, "//td[contains(text(), 'History HIS')]"))
         )
-        print("護理系頁面加載完成")
+        print("科系頁面加載完成")
 
     except Exception as e:
-        print(f"無法點擊護理系按鈕或頁面加載失敗：{e}")
+        print(f"無法點擊科系按鈕或頁面加載失敗：{e}")
         driver.save_screenshot('error_screenshot.png')
         return False
 
@@ -71,7 +71,7 @@ def check_course_status(driver):
     try:
         print("嘗試抓取課程狀態...")
         # 使用更具體的 XPath 來定位特定課程的狀態
-        course_xpath = "//td[contains(text(), 'I212600')]/following-sibling::td[6]"  # 修改為正確的 XPath 路徑
+        course_xpath = "//td[contains(text(), 'B338500')]/following-sibling::td[6]"  # 修改為正確的 XPath 路徑
         course_status_element = driver.find_element(By.XPATH, course_xpath)
         
         if not course_status_element:
