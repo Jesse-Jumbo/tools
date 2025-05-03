@@ -5,18 +5,18 @@ from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-
-
-
 import time
+import json
 
+with open("coursera_autoplay_config.json", "r", encoding="utf-8") as f:
+    config = json.load(f)
 
-# ========= 可調整參數 =========
-is_first_run = False  # 第一次執行登入請設為 True
-chrome_binary_path = "/修正成你的路徑/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
-chromedriver_path = "/修正成你的路徑/chromedriver-mac-arm64/chromedriver"
-user_profile_path = "/修正成你的路徑/coursera_profile"
-course_url = "輸入你要開始的課程 module 頁面"
+is_first_run = config["is_first_run"]
+chrome_binary_path = config["chrome_binary_path"]
+chromedriver_path = config["chromedriver_path"]
+user_profile_path = config["user_profile_path"]
+course_url = config["course_url"]
+
 
 # ========= 總觀看時數 =========
 total_watch_seconds = 0

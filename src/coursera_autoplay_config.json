@@ -1,0 +1,7 @@
+{
+  "is_first_run": true,
+  "chrome_binary_path": "你的路徑",
+  "chromedriver_path": "你的路徑/chromedriver",
+  "user_profile_path": "此專案路徑/coursera_profile",
+  "course_url": "https://www.coursera.org/learn/xxx/lecture/xxx"
+}
