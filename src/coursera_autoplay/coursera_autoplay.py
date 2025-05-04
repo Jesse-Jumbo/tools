@@ -12,6 +12,9 @@ import json
 import os
 
 
+MARK_COMPLETE_BTN = "//button[@data-testid='mark-complete']"
+NEXT_BTN = "//button[@data-testid='next-item']"
+
 # 取得目前 Python 檔案所在資料夾
 config_path = os.path.join(os.path.dirname(__file__), "config.json")
 with open(config_path, "r", encoding="utf-8") as f:
@@ -33,8 +36,14 @@ chrome_options.binary_location = chrome_binary_path
 chrome_options.add_argument(f"--user-data-dir={user_profile_path}")
 chrome_options.add_argument("--start-maximized")
 
-service = Service(executable_path=chromedriver_path)
-driver = webdriver.Chrome(service=service, options=chrome_options)
+try:
+    service = Service(executable_path=chromedriver_path)
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    driver.execute_script("document.body.style.zoom='80%'")
+except Exception as e:
+    print(f"❌ 啟動 Chrome 失敗，請檢查路徑是否正確：{str(e)}")
+    exit(1)
+
 
 if is_first_run:
     driver.get("https://www.coursera.org/")
@@ -43,7 +52,6 @@ if is_first_run:
     exit()
 
 driver.get(course_url)
-chrome_options.add_argument("--force-device-scale-factor=0.8")
 time.sleep(5)
 
 
@@ -54,7 +62,12 @@ def show_completion_message():
     root.withdraw()  # 隱藏主視窗
     minutes = total_watch_seconds // 60
     seconds = total_watch_seconds % 60
-    messagebox.showinfo("已完成課程", f"📊 完成所有項目！\n總觀看時間：{minutes} 分 {seconds} 秒")
+    try:
+        messagebox.showinfo("已完成課程", f"📊 完成所有項目！\n總觀看時間：{minutes} 分 {seconds} 秒")
+        root.destroy()
+    except Exception:
+        print(f"📊 完成所有項目！總觀看時間：{minutes} 分 {seconds} 秒")
+
     is_run = False
 
 
@@ -69,7 +82,8 @@ def parse_time_string(tstr):
             return int(parts[0]) * 60 + int(parts[1])
         elif len(parts) == 1:
             return int(parts[0])
-    except:
+    except Exception as e:
+        print("⚠️ 發生錯誤：", str(e))
         return 0
     return 0
 
@@ -85,13 +99,15 @@ def detect_content_type():
         driver.find_element(By.CLASS_NAME, "vjs-tech")
         print("✅ 這是一個影片頁面")
         return "video"
-    except:
+    except Exception as e:
+        print("⚠️ 發生錯誤：", str(e))
         pass
     try:
         driver.find_element(By.CLASS_NAME, "rc-ReadingItem")
         print("✅ 這是一個文章頁面")
         return "article"
-    except:
+    except Exception as e:
+        print("⚠️ 發生錯誤：", str(e))
         pass
     print("⚠️ 無法判斷內容型態")
     return "unknown"
@@ -126,6 +142,9 @@ def wait_until_video_finished():
         duration_sec = parse_time_string(duration_str)
         if duration_sec > 0:
             break
+        elif duration_sec == 0:
+            print("⚠️ 擷取到影片時間為 0，可能尚未載入完成")
+
         time.sleep(1)
     else:
         print("⚠️ 無法擷取影片總長度")
@@ -135,11 +154,28 @@ def wait_until_video_finished():
 
     # 影片播放中，每秒檢查進度直到完成
     last_logged_sec = -1
+    retry_count = 0
     while True:
         time.sleep(1)
 
         current_str = get_time_str("current-time-display")
         current_sec = parse_time_string(current_str)
+
+        # ▶️ 若播放秒數未變，試著重新點擊播放按鈕
+        if current_sec >= 0 and current_sec == last_logged_sec:
+            retry_count += 1
+            print(f"⚠️ 播放秒數未變，重試播放 {retry_count}/3")
+            try:
+                play_button = driver.find_element(By.CLASS_NAME, "rc-PlayToggle")
+                driver.execute_script("arguments[0].click();", play_button)
+            except Exception as e:
+                print("❌ 播放鍵點擊失敗：", str(e))
+            time.sleep(1)
+            if retry_count >= 3:
+                return 0
+            continue  # 不記錄這秒，繼續下一秒
+        else:
+            retry_count = 0  # 秒數有變，清除重試計數
 
         # 每 10 秒印一次
         if current_sec >= 0 and current_sec != last_logged_sec and current_sec % 10 == 0:
@@ -183,7 +219,10 @@ def wait_until_video_finished():
         next_link = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, "start-button"))
         )
-        next_href = next_link.get_attribute("href")
+        from urllib.parse import urljoin
+
+        base_url = "https://www.coursera.org"
+        next_href = urljoin(base_url, next_link.get_attribute("href"))
         if next_href:
             print(f"➡️ 準備跳轉至下一課程：{next_href}")
             driver.get(next_href)
@@ -205,7 +244,7 @@ def complete_article_and_proceed():
 
     # 👉 等待並點擊 "Mark as completed" 按鈕
     try:
-        mark_btn = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, "//button[@data-testid='mark-complete']")))
+        mark_btn = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, MARK_COMPLETE_BTN)))
         mark_btn.click()
         print("✅ 已點擊 Mark as completed")
     except Exception as e:
@@ -216,7 +255,7 @@ def complete_article_and_proceed():
     # 👉 等待並點擊 "Go to next item" 按鈕
     try:
         next_btn = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, "//button[@data-testid='next-item']"))
+            EC.presence_of_element_located((By.XPATH, NEXT_BTN))
         )
         driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'})", next_btn)
         time.sleep(0.5)
@@ -235,16 +274,17 @@ def complete_article_and_proceed():
 def handle_other_and_proceed():
     print("📘 非影片或文章類型，嘗試按完成與下一步")
     try:
-        mark_btn = driver.find_element(By.XPATH, "//button[@data-testid='mark-complete']")
+        mark_btn = driver.find_element(By.XPATH, MARK_COMPLETE_BTN)
         driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'})", mark_btn)
         time.sleep(0.3)
         driver.execute_script("arguments[0].click();", mark_btn)
         print("✅ 已點擊 Mark as completed")
-    except:
+    except Exception as e:
+        print("⚠️ 發生錯誤：", str(e))
         print("ℹ️ 無完成按鈕，跳過")
     time.sleep(1)
     try:
-        next_btn = driver.find_element(By.XPATH, "//button[@data-testid='next-item']")
+        next_btn = driver.find_element(By.XPATH, NEXT_BTN)
         driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'})", next_btn)
         time.sleep(0.3)
         driver.execute_script("arguments[0].click();", next_btn)
@@ -256,23 +296,35 @@ def handle_other_and_proceed():
             time.sleep(0.3)
             driver.execute_script("arguments[0].click();", fallback_btn)
             print("➡️ 已點擊 Fallback 的 Next 按鈕")
-        except:
+        except Exception as e:
+            print("⚠️ 發生錯誤：", str(e))
             show_completion_message()
-            driver.quit()
 
 
 # ========= 主流程迴圈 =========
 is_run = True
-while is_run:
-    time.sleep(5)
-    content_type = detect_content_type()
+try:
+    while is_run:
+        time.sleep(5)
+        content_type = detect_content_type()
 
-    if content_type == "video":
-        wait_until_video_finished()
-    elif content_type == "article":
-        complete_article_and_proceed()
-    else:
-        handle_other_and_proceed()
+        if content_type == "video":
+            wait_until_video_finished()
+        elif content_type == "article":
+            complete_article_and_proceed()
+        else:
+            handle_other_and_proceed()
 
-
-print(f"📊 完成所有項目！總觀看時間：{total_watch_seconds // 60} 分 {total_watch_seconds % 60} 秒")
+        if not is_run:
+            break
+        prev_url = driver.current_url
+        time.sleep(2)
+        if driver.current_url == prev_url:
+            print("⚠️ 頁面未成功切換，將自動重新整理")
+            driver.refresh()
+            time.sleep(5)
+            continue  # 再跑一次頁面類型判斷
+except KeyboardInterrupt:
+    print("\n🛑 手動中斷程式")
+finally:
+    driver.quit()
