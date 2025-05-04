@@ -10,6 +10,8 @@ import tkinter as tk
 import time
 import json
 import os
+import platform
+import sys
 
 
 MARK_COMPLETE_BTN = "//button[@data-testid='mark-complete']"
@@ -55,6 +57,30 @@ driver.get(course_url)
 time.sleep(5)
 
 
+def notify(title, message):
+    if platform.system() == "Windows":
+        try:
+            from win10toast import ToastNotifier
+            toaster = ToastNotifier()
+            toaster.show_toast(title, message, duration=10, threaded=True)
+        except Exception:
+            print("⚠️ 無法顯示 Windows 通知：", str(e))
+            print(f"{title}: {message}")
+    else:
+        print(f"[通知模擬] {title}: {message}")
+
+
+def play_notification_sound():
+    system = platform.system()
+    if system == "Darwin":  # macOS
+        os.system("afplay /System/Library/Sounds/Glass.aiff")
+    elif system == "Windows":
+        import winsound
+        winsound.MessageBeep()
+    else:
+        print("🔕 不支援的作業系統")
+
+
 # 課程完成提示
 def show_completion_message():
     global is_run
@@ -62,11 +88,17 @@ def show_completion_message():
     root.withdraw()  # 隱藏主視窗
     minutes = total_watch_seconds // 60
     seconds = total_watch_seconds % 60
-    try:
-        messagebox.showinfo("已完成課程", f"📊 完成所有項目！\n總觀看時間：{minutes} 分 {seconds} 秒")
-        root.destroy()
-    except Exception:
-        print(f"📊 完成所有項目！總觀看時間：{minutes} 分 {seconds} 秒")
+    play_notification_sound()
+    message = f"📊 完成所有項目！總觀看時間：{minutes} 分 {seconds} 秒"
+
+    if platform.system() == "Windows":
+         notify("完成影片", "🎉 恭喜你完成了一部影片！")
+    else:
+        try:
+            messagebox.showinfo("已完成課程", message)
+            root.destroy()
+        except Exception:
+            print(message)
 
     is_run = False
 
@@ -161,7 +193,7 @@ def wait_until_video_finished():
         current_str = get_time_str("current-time-display")
         current_sec = parse_time_string(current_str)
 
-        # ▶️ 若播放秒數未變，試著重新點擊播放按鈕
+        # ▶️若播放秒數未變，試著重新點擊播放按鈕
         if current_sec >= 0 and current_sec == last_logged_sec:
             retry_count += 1
             print(f"⚠️ 播放秒數未變，重試播放 {retry_count}/3")

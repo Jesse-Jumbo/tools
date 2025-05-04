@@ -1,8 +1,11 @@
 ## 使用說明（Windows 使用者）
 
 1. 安裝 Python 3.x 與 pip。
-2. 安裝 Selenium：
-
+2. 安裝 Selenium 與 win10toast（如果是 windows 系統）：
+    ```bash
+   pip install selenium
+   pip install win10toast
+   ```
 3. 下載（須更新你的 Chrome 為最新版）：
 - [Chrome for Testing](https://googlechromelabs.github.io/chrome-for-testing/)
 - [ChromeDriver](https://googlechromelabs.github.io/chrome-for-testing/)
