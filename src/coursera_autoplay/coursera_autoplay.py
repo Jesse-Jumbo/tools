@@ -9,8 +9,12 @@ from tkinter import messagebox
 import tkinter as tk
 import time
 import json
+import os
 
-with open("coursera_autoplay_config.json", "r", encoding="utf-8") as f:
+
+# 取得目前 Python 檔案所在資料夾
+config_path = os.path.join(os.path.dirname(__file__), "config.json")
+with open(config_path, "r", encoding="utf-8") as f:
     config = json.load(f)
 
 is_first_run = config["is_first_run"]

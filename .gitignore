@@ -1,6 +1,7 @@
 venv/
+.venv/
 .idea/
-chrome-mac-arm64/
-chromedriver-mac-arm64/
+src/coursera_autoplay/chrome-mac-arm64/
+src/coursera_autoplay/chromedriver-mac-arm64/
 .DS_Store
-coursera_profile/
+src/coursera_autoplay/coursera_profile/
