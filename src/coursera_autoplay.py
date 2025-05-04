@@ -5,6 +5,8 @@ from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from tkinter import messagebox
+import tkinter as tk
 import time
 import json
 
@@ -37,7 +39,20 @@ if is_first_run:
     exit()
 
 driver.get(course_url)
+chrome_options.add_argument("--force-device-scale-factor=0.8")
 time.sleep(5)
+
+
+# 課程完成提示
+def show_completion_message():
+    global is_run
+    root = tk.Tk()
+    root.withdraw()  # 隱藏主視窗
+    minutes = total_watch_seconds // 60
+    seconds = total_watch_seconds % 60
+    messagebox.showinfo("已完成課程", f"📊 完成所有項目！\n總觀看時間：{minutes} 分 {seconds} 秒")
+    is_run = False
+
 
 # ========= 工具函式 =========
 def parse_time_string(tstr):
@@ -238,11 +253,13 @@ def handle_other_and_proceed():
             driver.execute_script("arguments[0].click();", fallback_btn)
             print("➡️ 已點擊 Fallback 的 Next 按鈕")
         except:
-            print("❌ 找不到任何可點擊的下一步按鈕")
+            show_completion_message()
+            driver.quit()
 
 
 # ========= 主流程迴圈 =========
-while True:
+is_run = True
+while is_run:
     time.sleep(5)
     content_type = detect_content_type()
 

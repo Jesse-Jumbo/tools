@@ -3,3 +3,4 @@ venv/
 chrome-mac-arm64/
 chromedriver-mac-arm64/
 .DS_Store
+coursera_profile/
