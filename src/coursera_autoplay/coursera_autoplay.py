@@ -300,6 +300,7 @@ def complete_article_and_proceed():
     except Exception as e:
         driver.save_screenshot("go_to_next_failed.png")
         print("⚠️ 無法點擊 Go to next item（或頁面未變動）：", str(e))
+        show_completion_message()
 
 
 # ========= 其他類型處理 =========
