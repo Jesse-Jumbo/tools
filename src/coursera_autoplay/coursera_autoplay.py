@@ -13,7 +13,7 @@ import os
 import platform
 import sys
 
-
+# XPATH 定義
 MARK_COMPLETE_BTN = "//button[@data-testid='mark-complete']"
 NEXT_BTN = "//button[@data-testid='next-item']"
 
@@ -25,11 +25,14 @@ with open(config_path, "r", encoding="utf-8") as f:
 is_first_run = config["is_first_run"]
 chrome_binary_path = config["chrome_binary_path"]
 chromedriver_path = config["chromedriver_path"]
-user_profile_path = config["user_profile_path"]
-course_url = config["course_url"]
+user_profile_path = os.path.join(os.path.dirname(__file__), "coursera_profile")
+# 確保 course_urls 一定是 list
+course_urls = config["course_url"]
+if isinstance(course_urls, str):
+    course_urls = [course_urls]
 
-
-# ========= 總觀看時數 =========
+# ========= 初始索引與總觀看時間 =========
+current_course_idx = 0
 total_watch_seconds = 0
 
 # ========= 初始化 Chrome =========
@@ -46,16 +49,12 @@ except Exception as e:
     print(f"❌ 啟動 Chrome 失敗，請檢查路徑是否正確：{str(e)}")
     exit(1)
 
-
+# 首次執行登入
 if is_first_run:
     driver.get("https://www.coursera.org/")
     input("👉 請手動登入帳號，完成後按 Enter 結束...")
     driver.quit()
     exit()
-
-driver.get(course_url)
-time.sleep(5)
-
 
 def notify(title, message):
     if platform.system() == "Windows":
@@ -81,26 +80,38 @@ def play_notification_sound():
         print("🔕 不支援的作業系統")
 
 
-# 課程完成提示
+# 顯示完成訊息，並切換到下一門課程或結束
 def show_completion_message():
-    global is_run
+    global current_course_idx, total_watch_seconds, is_run
     root = tk.Tk()
     root.withdraw()  # 隱藏主視窗
     minutes = total_watch_seconds // 60
     seconds = total_watch_seconds % 60
     play_notification_sound()
-    message = f"📊 完成所有項目！總觀看時間：{minutes} 分 {seconds} 秒"
 
-    if platform.system() == "Windows":
-         notify("完成影片", "🎉 恭喜你完成了一部影片！")
+    # 如果還有下一門課程
+    if current_course_idx < len(course_urls) - 1:
+        print(f"📊 課程 {current_course_idx+1} 完成！總觀看時間：{minutes} 分 {seconds} 秒")
+        current_course_idx += 1
+        total_watch_seconds = 0  # 重置計時
+        next_url = course_urls[current_course_idx]
+        print(f"➡️ 自動跳轉至第 {current_course_idx+1} 門課程：{next_url}")
+        driver.get(next_url)
+        time.sleep(5)
+        is_run = True
     else:
-        try:
-            messagebox.showinfo("已完成課程", message)
-            root.destroy()
-        except Exception:
-            print(message)
+        # 最後一門也完成，顯示圖形化訊息後結束
+        if platform.system() == "Windows":
+            notify("完成所有課程", "🎉 恭喜你完成最後一門課程！")
+        else:
+            message = f"📊 全部完成！最後一門課程總觀看時間：{minutes} 分 {seconds} 秒"
+            try:
+                messagebox.showinfo("已完成所有課程", message)
+                root.destroy()
+            except Exception:
+                print(message)
 
-    is_run = False
+        is_run = False
 
 
 # ========= 工具函式 =========
@@ -336,6 +347,10 @@ def handle_other_and_proceed():
 
 # ========= 主流程迴圈 =========
 is_run = True
+# 先導向第一門課程
+driver.get(course_urls[current_course_idx])
+time.sleep(5)
+
 try:
     while is_run:
         time.sleep(5)
@@ -348,8 +363,12 @@ try:
         else:
             handle_other_and_proceed()
 
+        # 若 is_run 在 show_completion_message 中被改為 True（切換課程），
+        # 迴圈會繼續並自動偵測新的 URL。
         if not is_run:
             break
+
+        # 一般項目跳轉邏輯：若頁面未變，強制重新整理
         prev_url = driver.current_url
         time.sleep(2)
         if driver.current_url == prev_url:
