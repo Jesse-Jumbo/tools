@@ -10,29 +10,30 @@ import tkinter as tk
 import time
 import json
 import os
-import platform
-import sys
+from urllib.parse import urljoin
 
-
+# XPATH 定義
 MARK_COMPLETE_BTN = "//button[@data-testid='mark-complete']"
 NEXT_BTN = "//button[@data-testid='next-item']"
 
-# 取得目前 Python 檔案所在資料夾
-config_path = os.path.join(os.path.dirname(__file__), "config.json")
-with open(config_path, "r", encoding="utf-8") as f:
+# 載入設定
+with open(r"C:\Users\anton\Downloads\python\coursera_auto\tools-main\src\coursera_autoplay_config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 
-is_first_run = config["is_first_run"]
+is_first_run       = config["is_first_run"]
 chrome_binary_path = config["chrome_binary_path"]
-chromedriver_path = config["chromedriver_path"]
-user_profile_path = config["user_profile_path"]
-course_url = config["course_url"]
+chromedriver_path  = config["chromedriver_path"]
+user_profile_path  = config["user_profile_path"]
+# 確保 course_urls 一定是 list
+course_urls = config["course_url"]
+if isinstance(course_urls, str):
+    course_urls = [course_urls]
 
+# 初始索引與總觀看時間
+current_course_idx    = 0
+total_watch_seconds   = 0
 
-# ========= 總觀看時數 =========
-total_watch_seconds = 0
-
-# ========= 初始化 Chrome =========
+# 初始化 Chrome
 chrome_options = Options()
 chrome_options.binary_location = chrome_binary_path
 chrome_options.add_argument(f"--user-data-dir={user_profile_path}")
@@ -43,64 +44,46 @@ try:
     driver = webdriver.Chrome(service=service, options=chrome_options)
     driver.execute_script("document.body.style.zoom='80%'")
 except Exception as e:
-    print(f"❌ 啟動 Chrome 失敗，請檢查路徑是否正確：{str(e)}")
+    print(f"❌ 啟動 Chrome 失敗，請檢查路徑是否正確：{e}")
     exit(1)
 
-
+# 首次執行登入
 if is_first_run:
     driver.get("https://www.coursera.org/")
     input("👉 請手動登入帳號，完成後按 Enter 結束...")
     driver.quit()
     exit()
 
-driver.get(course_url)
-time.sleep(5)
-
-
-def notify(title, message):
-    if platform.system() == "Windows":
-        try:
-            from win10toast import ToastNotifier
-            toaster = ToastNotifier()
-            toaster.show_toast(title, message, duration=10, threaded=True)
-        except Exception:
-            print("⚠️ 無法顯示 Windows 通知：", str(e))
-            print(f"{title}: {message}")
-    else:
-        print(f"[通知模擬] {title}: {message}")
-
-
-def play_notification_sound():
-    system = platform.system()
-    if system == "Darwin":  # macOS
-        os.system("afplay /System/Library/Sounds/Glass.aiff")
-    elif system == "Windows":
-        import winsound
-        winsound.MessageBeep()
-    else:
-        print("🔕 不支援的作業系統")
-
-
-# 課程完成提示
+# 顯示完成訊息，並切換到下一門課程或結束
 def show_completion_message():
-    global is_run
-    root = tk.Tk()
-    root.withdraw()  # 隱藏主視窗
+    global current_course_idx, total_watch_seconds, is_run
+
     minutes = total_watch_seconds // 60
     seconds = total_watch_seconds % 60
-    play_notification_sound()
-    message = f"📊 完成所有項目！總觀看時間：{minutes} 分 {seconds} 秒"
 
-    if platform.system() == "Windows":
-         notify("完成影片", "🎉 恭喜你完成了一部影片！")
+    # 如果還有下一門課程
+    if current_course_idx < len(course_urls) - 1:
+        print(f"📊 課程 {current_course_idx+1} 完成！總觀看時間：{minutes} 分 {seconds} 秒")
+        current_course_idx += 1
+        total_watch_seconds = 0  # 重置計時
+        next_url = course_urls[current_course_idx]
+        print(f"➡️ 自動跳轉至第 {current_course_idx+1} 門課程：{next_url}")
+        driver.get(next_url)
+        time.sleep(5)
+        is_run = True
     else:
+        # 最後一門也完成，顯示圖形化訊息後結束
+        root = tk.Tk()
+        root.withdraw()
         try:
-            messagebox.showinfo("已完成課程", message)
+            messagebox.showinfo(
+                "已完成所有課程",
+                f"📊 全部完成！最後一門課程總觀看時間：{minutes} 分 {seconds} 秒"
+            )
             root.destroy()
         except Exception:
-            print(message)
-
-    is_run = False
+            print(f"📊 全部完成！最後一門課程總觀看時間：{minutes} 分 {seconds} 秒")
+        is_run = False
 
 
 # ========= 工具函式 =========
@@ -162,7 +145,7 @@ def wait_until_video_finished():
 
     try:
         play_button = driver.find_element(By.CLASS_NAME, "rc-PlayToggle")
-        play_button.click()
+        
         print("⏯️ 已點擊播放")
     except NoSuchElementException:
         print("⚠️ 找不到播放按鈕")
@@ -193,7 +176,7 @@ def wait_until_video_finished():
         current_str = get_time_str("current-time-display")
         current_sec = parse_time_string(current_str)
 
-        # ▶️若播放秒數未變，試著重新點擊播放按鈕
+        # ▶️ 若播放秒數未變，試著重新點擊播放按鈕
         if current_sec >= 0 and current_sec == last_logged_sec:
             retry_count += 1
             print(f"⚠️ 播放秒數未變，重試播放 {retry_count}/3")
@@ -300,7 +283,6 @@ def complete_article_and_proceed():
     except Exception as e:
         driver.save_screenshot("go_to_next_failed.png")
         print("⚠️ 無法點擊 Go to next item（或頁面未變動）：", str(e))
-        show_completion_message()
 
 
 # ========= 其他類型處理 =========
@@ -333,9 +315,12 @@ def handle_other_and_proceed():
             print("⚠️ 發生錯誤：", str(e))
             show_completion_message()
 
-
-# ========= 主流程迴圈 =========
+# ========= 主流程 =========
 is_run = True
+# 先導向第一門課程
+driver.get(course_urls[current_course_idx])
+time.sleep(5)
+
 try:
     while is_run:
         time.sleep(5)
@@ -348,15 +333,20 @@ try:
         else:
             handle_other_and_proceed()
 
+        # 若 is_run 在 show_completion_message 中被改為 True（切換課程），
+        # 迴圈會繼續並自動偵測新的 URL。
         if not is_run:
             break
+
+        # 一般項目跳轉邏輯：若頁面未變，強制重新整理
         prev_url = driver.current_url
-        time.sleep(2)
+        time.sleep(5)
         if driver.current_url == prev_url:
             print("⚠️ 頁面未成功切換，將自動重新整理")
             driver.refresh()
             time.sleep(5)
-            continue  # 再跑一次頁面類型判斷
+            continue
+
 except KeyboardInterrupt:
     print("\n🛑 手動中斷程式")
 finally:
