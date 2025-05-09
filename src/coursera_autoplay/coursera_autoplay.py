@@ -2,6 +2,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -11,11 +12,12 @@ import time
 import json
 import os
 import platform
+import re
 import sys
 
-# XPATH 定義
 MARK_COMPLETE_BTN = "//button[@data-testid='mark-complete']"
 NEXT_BTN = "//button[@data-testid='next-item']"
+CURRENT_TIME_DISPLAY = "current-time-display"
 
 # 取得目前 Python 檔案所在資料夾
 config_path = os.path.join(os.path.dirname(__file__), "config.json")
@@ -118,17 +120,21 @@ def show_completion_message():
 def parse_time_string(tstr):
     if not tstr:
         return 0
-    parts = tstr.replace(" seconds", "").replace(" second", "") \
-                .replace(" minutes", ":").replace(" minute", ":").split(":")
-    try:
-        if len(parts) == 2:
-            return int(parts[0]) * 60 + int(parts[1])
-        elif len(parts) == 1:
-            return int(parts[0])
-    except Exception as e:
-        print("⚠️ 發生錯誤：", str(e))
-        return 0
-    return 0
+
+    # 例子：tstr = "2 minutes 40 seconds"
+    minutes = 0
+    seconds = 0
+
+    min_match = re.search(r"(\d+)\s*minute", tstr)
+    sec_match = re.search(r"(\d+)\s*second", tstr)
+
+    if min_match:
+        minutes = int(min_match.group(1))
+    if sec_match:
+        seconds = int(sec_match.group(1))
+
+    return minutes * 60 + seconds
+
 
 def get_time_str(class_name):
     try:
@@ -136,6 +142,7 @@ def get_time_str(class_name):
         return time_element.get_attribute("aria-label")
     except NoSuchElementException:
         return None
+
 
 def detect_content_type():
     try:
@@ -165,19 +172,25 @@ def scroll_article_to_bottom():
         print("⚠️ 無法滑動 #main-container：", str(e))
 
 
+def click_play_button():
+    try:
+        play_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CLASS_NAME, "rc-PlayToggle"))
+        )
+        ActionChains(driver).move_to_element(play_button).pause(0.5).click(play_button).perform()
+        print("🖱️ 使用 ActionChains 模擬點擊播放按鈕")
+        return True
+    except Exception as e:
+        print("⚠️ 播放按鈕點擊失敗：", str(e))
+        return False
+
 
 # ========= 影片處理 =========
+from selenium.webdriver.common.action_chains import ActionChains
+
 def wait_until_video_finished():
     global total_watch_seconds
-    print("▶️ 開始播放影片")
-
-    try:
-        play_button = driver.find_element(By.CLASS_NAME, "rc-PlayToggle")
-        play_button.click()
-        print("⏯️ 已點擊播放")
-    except NoSuchElementException:
-        print("⚠️ 找不到播放按鈕")
-        return
+    print("▶️ 偵測影片是否已在播放中")
 
     # 嘗試取得影片總時長
     for _ in range(10):
@@ -187,7 +200,6 @@ def wait_until_video_finished():
             break
         elif duration_sec == 0:
             print("⚠️ 擷取到影片時間為 0，可能尚未載入完成")
-
         time.sleep(1)
     else:
         print("⚠️ 無法擷取影片總長度")
@@ -195,61 +207,71 @@ def wait_until_video_finished():
 
     print(f"📺 影片總時長：{duration_sec} 秒")
 
-    # 影片播放中，每秒檢查進度直到完成
-    last_logged_sec = -1
-    retry_count = 0
-    while True:
-        time.sleep(1)
+    # ✅ 初次點擊播放（模擬滑鼠進入 + 點擊）
+    print("▶️ 嘗試初次點擊播放")
+    try:
+        play_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CLASS_NAME, "rc-PlayToggle"))
+        )
+        ActionChains(driver).move_to_element(play_button).pause(0.5).click(play_button).perform()
+        print("⏯️ 已點擊播放按鈕，等待 video 開始播放...")
+    except Exception as e:
+        print("⚠️ 初次播放等待 video 播放失敗：", str(e))
 
-        current_str = get_time_str("current-time-display")
+    last_logged_sec = -1
+    playback_stuck_count = 0
+
+    while True:
+        time.sleep(2)
+
+        current_str = get_time_str(CURRENT_TIME_DISPLAY)
+        if not current_str:
+            print("⌛ 等待影片載入中（未取得時間）")
+            continue
+
         current_sec = parse_time_string(current_str)
 
-        # ▶️若播放秒數未變，試著重新點擊播放按鈕
-        if current_sec >= 0 and current_sec == last_logged_sec:
-            retry_count += 1
-            print(f"⚠️ 播放秒數未變，重試播放 {retry_count}/3")
-            try:
-                play_button = driver.find_element(By.CLASS_NAME, "rc-PlayToggle")
-                driver.execute_script("arguments[0].click();", play_button)
-            except Exception as e:
-                print("❌ 播放鍵點擊失敗：", str(e))
-            time.sleep(1)
-            if retry_count >= 3:
-                return 0
-            continue  # 不記錄這秒，繼續下一秒
+        # 初期緩衝：影片從非 0 秒開始播放（避免誤判）
+        if 0 < current_sec < 5:
+            print(f"⏳ 播放初期緩衝中：{current_sec} 秒（不判定卡住）")
+            continue
+
+        if current_sec == last_logged_sec:
+            playback_stuck_count += 1
+            print(f"⏸️ 偵測播放卡住，第 {playback_stuck_count} 次嘗試恢復播放")
+            if playback_stuck_count <= 3:
+                try:
+                    play_button = driver.find_element(By.CLASS_NAME, "rc-PlayToggle")
+                    ActionChains(driver).move_to_element(play_button).pause(0.5).click(play_button).perform()
+                    print("⏯️ 已重新點擊播放按鈕")
+                except Exception as e:
+                    print("⚠️ 無法重新點擊播放按鈕：", str(e))
+            else:
+                print("❌ 多次重試播放失敗，略過本影片")
+                return
         else:
-            retry_count = 0  # 秒數有變，清除重試計數
+            playback_stuck_count = 0
 
-        # 每 10 秒印一次
-        if current_sec >= 0 and current_sec != last_logged_sec and current_sec % 10 == 0:
-            print(f"⏱️ 目前播放時間：{current_sec} 秒")
-            last_logged_sec = current_sec
+        last_logged_sec = current_sec
 
-        # 👉 檢查是否出現 VideoQuiz，點擊 Skip 或 Continue
+        # 🎯 處理 VideoQuiz
         try:
             quiz_container = driver.find_element(By.CLASS_NAME, "rc-VideoQuiz")
-            try:
-                skip_button = quiz_container.find_element(By.XPATH, ".//button[.//span[text()='Skip']]")
-                driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'})", skip_button)
-                time.sleep(0.2)
-                driver.execute_script("arguments[0].click();", skip_button)
-                print("⏭️ 已跳過 VideoQuiz（Skip）")
-            except NoSuchElementException:
+            for btn_label in ['Skip', 'Continue']:
                 try:
-                    continue_button = quiz_container.find_element(By.XPATH, ".//button[.//span[text()='Continue']]")
-                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'})", continue_button)
-                    time.sleep(0.2)
-                    driver.execute_script("arguments[0].click();", continue_button)
-                    print("⏭️ 已跳過 VideoQuiz（Continue）")
+                    quiz_button = quiz_container.find_element(By.XPATH, f".//button[.//span[text()='{btn_label}']]")
+                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'})", quiz_button)
+                    time.sleep(0.3)
+                    driver.execute_script("arguments[0].click();", quiz_button)
+                    print(f"⏭️ 已跳過 VideoQuiz（{btn_label}）")
+                    break
                 except NoSuchElementException:
-                    print("ℹ️ 偵測到 quiz，但無 Skip 或 Continue 按鈕")
-            time.sleep(1)
+                    continue
         except NoSuchElementException:
             pass
         except Exception as e:
             print("⚠️ 嘗試處理 quiz 時出現例外：", str(e))
 
-        # ✅ 播放完成檢查
         if abs(current_sec - duration_sec) <= 2:
             print(f"✅ 播放成功完成，當前秒數：{current_sec} / 預期：{duration_sec}")
             break
@@ -257,22 +279,18 @@ def wait_until_video_finished():
     total_watch_seconds += duration_sec
     print(f"🎯 本影片播放：{duration_sec} 秒，總觀看時間：{total_watch_seconds // 60} 分 {total_watch_seconds % 60} 秒")
 
-    # ✅ 播放後抓取 <a> 的 href，並跳轉
+    # 導向下一課程（若有）
     try:
         next_link = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, "start-button"))
         )
         from urllib.parse import urljoin
-
-        base_url = "https://www.coursera.org"
-        next_href = urljoin(base_url, next_link.get_attribute("href"))
+        next_href = urljoin("https://www.coursera.org", next_link.get_attribute("href"))
         if next_href:
             print(f"➡️ 準備跳轉至下一課程：{next_href}")
             driver.get(next_href)
         else:
             print("⚠️ 找到 start-button 但 href 為空")
-    except NoSuchElementException:
-        print("ℹ️ 找不到下一個課程的連結（start-button）")
     except Exception as e:
         print(f"⚠️ 嘗試導向下一課程時出現例外：{str(e)}")
 
@@ -350,7 +368,6 @@ is_run = True
 # 先導向第一門課程
 driver.get(course_urls[current_course_idx])
 time.sleep(5)
-
 try:
     while is_run:
         time.sleep(5)
